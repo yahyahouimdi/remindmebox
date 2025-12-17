@@ -1,0 +1,7 @@
+functions/node_modules/
+functions/lib/
+functions/.secret.local
+functions/*.local
+*.log
+.firebase/
+service-account*.json
