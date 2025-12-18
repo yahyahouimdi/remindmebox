@@ -1,0 +1,29 @@
+{
+  "name": "remindmebox-functions",
+  "version": "1.0.0",
+  "description": "RemindMeBox Cloud Functions: device API, alerts, missed-dose monitoring and the Dr. AI assistant",
+  "private": true,
+  "main": "lib/src/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "build:watch": "tsc -p . --watch",
+    "test": "npm run build && node --test \"lib/test/**/*.test.js\"",
+    "serve": "npm run build && firebase emulators:start --project demo-remindmebox",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log",
+    "register-device": "npm run build && node lib/scripts/register-device.js",
+    "e2e": "npm run build && firebase emulators:exec --only auth,firestore,functions --project demo-remindmebox \"node lib/scripts/e2e-emulator.js\""
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.0",
+    "firebase-functions": "^7.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "firebase-tools": "^15.34.1",
+    "typescript": "^7.0.2"
+  }
+}
