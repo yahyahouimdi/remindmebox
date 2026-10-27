@@ -1,5 +1,5 @@
 name: remindmebox
-description: "A new Flutter project."
+description: "RemindMeBox: smart pill dispenser companion app (Flutter + Firebase)."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -31,8 +31,19 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.2
-  flutter_map: ^6.0.0
-  latlong2: ^0.9.0
+  flutter_map: ^8.3.2
+  latlong2: ^0.10.1
+  firebase_core: ^5.1.0
+  firebase_auth: ^7.0.1
+  cloud_firestore: ^7.1.0
+  cloud_functions: ^7.0.1
+  firebase_messaging: ^17.0.1
+  flutter_blue_plus: ^2.3.14
+  geolocator: ^14.1.2
+  http: ^1.6.0
+  provider: ^6.1.5+1
+  intl: ^0.20.3
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:

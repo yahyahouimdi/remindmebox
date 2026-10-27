@@ -1,0 +1,142 @@
+rules_version = '2';
+
+// RemindMeBox security model
+//  - users/{uid}            : private profile, created by the user at registration.
+//  - devices/{id}           : a smart box. `ownerUid` (Super User) configures it,
+//                             `memberUids` (owner + caregivers) can monitor it.
+//  - device sub-collections : compartments & schedules are written by the owner;
+//                             dose events, alerts and locations are written only by
+//                             Cloud Functions (device API / monitor), never by clients.
+//  - deviceSecrets, invitations : server-only.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function device(deviceId) {
+      return get(/databases/$(database)/documents/devices/$(deviceId)).data;
+    }
+
+    function isMember(deviceId) {
+      return signedIn() && request.auth.uid in device(deviceId).memberUids;
+    }
+
+    function isOwner(deviceId) {
+      return signedIn() && device(deviceId).ownerUid == request.auth.uid;
+    }
+
+    function onlyChanged(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    // ---------------------------------------------------------------- users
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'email', 'emailLower', 'role', 'pushIds', 'createdAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 80
+        && request.resource.data.role in ['super', 'simple']
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.emailLower == request.auth.token.email.lower();
+
+      // The role is chosen once at registration and can't be changed by the client.
+      allow update: if signedIn() && request.auth.uid == uid
+        && onlyChanged(['name', 'pushIds', 'updatedAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 80;
+
+      allow delete: if false;
+
+      // Dr. AI conversation history: written by the assistant function, the user may clear it.
+      match /messages/{messageId} {
+        allow read, delete: if signedIn() && request.auth.uid == uid;
+        allow create, update: if false;
+      }
+    }
+
+    // -------------------------------------------------------------- devices
+    match /devices/{deviceId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.memberUids;
+
+      // Claiming / releasing a device and managing caregivers goes through Cloud Functions.
+      allow create, delete: if false;
+      allow update: if signedIn() && resource.data.ownerUid == request.auth.uid
+        && onlyChanged(['name', 'patientName', 'settings', 'geofence', 'timezone'])
+        && validSettings(request.resource.data.settings)
+        && validGeofence(request.resource.data.geofence);
+
+      function validSettings(s) {
+        return s is map
+          && s.missedDoseDelayMin is int && s.missedDoseDelayMin >= 5 && s.missedDoseDelayMin <= 240
+          && s.lowStockThreshold is int && s.lowStockThreshold >= 0 && s.lowStockThreshold <= 100;
+      }
+
+      function validGeofence(g) {
+        return g == null || (g is map
+          && g.enabled is bool
+          && g.radiusM is number && g.radiusM >= 50 && g.radiusM <= 50000
+          && g.lat is number && g.lng is number);
+      }
+
+      match /compartments/{index} {
+        allow read: if isMember(deviceId);
+        allow create, update: if isOwner(deviceId)
+          && request.resource.data.keys().hasOnly(['index', 'medicationName', 'quantity', 'notes', 'updatedAt'])
+          && request.resource.data.index is int
+          && request.resource.data.index >= 1 && request.resource.data.index <= device(deviceId).compartmentCount
+          && string(request.resource.data.index) == index
+          && request.resource.data.medicationName is string && request.resource.data.medicationName.size() <= 80
+          && request.resource.data.quantity is int && request.resource.data.quantity >= 0 && request.resource.data.quantity <= 500
+          && request.resource.data.notes is string && request.resource.data.notes.size() <= 300;
+        allow delete: if false;
+      }
+
+      match /schedules/{scheduleId} {
+        allow read: if isMember(deviceId);
+        allow create, update: if isOwner(deviceId)
+          && request.resource.data.keys().hasOnly(['label', 'time', 'days', 'doses', 'enabled', 'createdAt', 'updatedAt'])
+          && request.resource.data.time is string
+          && request.resource.data.time.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+          && request.resource.data.days is list
+          && request.resource.data.days.size() >= 1 && request.resource.data.days.size() <= 7
+          && request.resource.data.doses is map
+          && request.resource.data.doses.size() >= 1
+          && request.resource.data.enabled is bool
+          && request.resource.data.label is string && request.resource.data.label.size() <= 60;
+        allow delete: if isOwner(deviceId);
+      }
+
+      match /doseEvents/{eventId} {
+        allow read: if isMember(deviceId);
+        allow write: if false;
+      }
+
+      match /locations/{locationId} {
+        allow read: if isMember(deviceId);
+        allow write: if false;
+      }
+
+      match /alerts/{alertId} {
+        allow read: if isMember(deviceId);
+        allow create, delete: if false;
+        // Any caregiver can acknowledge an alert, nothing else.
+        allow update: if isMember(deviceId)
+          && onlyChanged(['acknowledged', 'acknowledgedBy', 'acknowledgedAt'])
+          && request.resource.data.acknowledged == true
+          && request.resource.data.acknowledgedBy == request.auth.uid;
+      }
+    }
+
+    match /deviceSecrets/{deviceId} {
+      allow read, write: if false;
+    }
+
+    match /invitations/{invitationId} {
+      allow read, write: if false;
+    }
+  }
+}
